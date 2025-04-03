@@ -1,0 +1,74 @@
+body {
+    font-family: Arial, sans-serif;
+    padding: 15px;
+}
+
+#ftp-connection {
+    margin-bottom: 15px;
+}
+
+#ftp-connection input {
+    padding: 8px;
+    margin-right: 5px;
+}
+
+#ftp-connection button {
+    padding: 8px 15px;
+}
+
+.panes {
+    display: flex;
+    gap: 15px;
+}
+
+.pane {
+    flex: 1;
+    border: 1px solid #ccc;
+    padding: 10px;
+    overflow-y: auto;
+    height: 500px;
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+li {
+    padding: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+li:hover {
+    background-color: #f0f0f0;
+}
+
+/* .selected má prednosť pred :hover */
+li.selected,
+li.selected:hover {
+    background-color: #d0ebff !important;
+}
+
+/* Modálne okno */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; 
+    background-color: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+    background-color: #fff;
+    margin: 10% auto;
+    padding: 20px;
+    width: 400px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+}

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Editor</title>
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="editor.js"></script>
+    <style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 10px;
+    }
+    #filename {
+        font-weight: bold;
+    }
+    #editorArea {
+        width: 98%;
+        height: 400px;
+        font-family: monospace;
+    }
+    </style>
+</head>
+<body>
+    <h2>Editor súboru: <span id="filename"></span></h2>
+    <textarea id="editorArea"></textarea><br>
+    <button onclick="saveFile()">Uložiť</button>
+    <button onclick="closeWindow()">Zavrieť</button>
+</body>
+</html>

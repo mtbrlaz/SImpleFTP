@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FTP Klient</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="script.js"></script>
+</head>
+<body>
+    <h1>FTP Klient</h1>
+
+    <div id="ftp-connection">
+        <input type="text" id="host" placeholder="FTP Host">
+        <input type="text" id="username" placeholder="Používateľské meno">
+        <input type="password" id="password" placeholder="Heslo">
+        <button onclick="connect()">Pripojiť</button>
+        <button onclick="openSettingsModal()">Nastavenia</button>
+        <button onclick="openAccessManager()">Správca prístupov</button>
+    </div>
+
+    <p>Klávesy: Tab (prepína panel), Enter (otvoriť), F5 (kopírovať), F2 (premenovať), 
+       Shift+F4 (nový súbor), F7 (nový priečinok)</p>
+
+    <div class="panes">
+        <div class="pane">
+            <h2>Lokálne súbory</h2>
+            <ul id="local-files"></ul>
+        </div>
+        <div class="pane">
+            <h2>Vzdialené súbory</h2>
+            <ul id="remote-files"></ul>
+        </div>
+    </div>
+
+    <!-- MODÁLNE OKNO PRE NASTAVENIA -->
+    <div id="settings-modal" class="modal">
+      <div class="modal-content">
+        <h2>Nastavenia</h2>
+        <label for="rootPathInput">Root cesta pre lokálne súbory:</label><br>
+        <input type="text" id="rootPathInput" style="width: 80%;" placeholder="napr. C:/Users alebo /home/uzivatel"><br><br>
+        <button onclick="saveSettings()">Uložiť</button>
+        <button onclick="closeSettingsModal()">Zrušiť</button>
+      </div>
+    </div>
+
+    <!-- MODÁLNE OKNO PRE ACCESS MANAGER -->
+    <div id="access-manager-modal" class="modal">
+      <div class="modal-content">
+        <h2>Správca prístupov (WinSCP Sessions)</h2>
+        <div>
+            <label>Session Name:</label>
+            <input type="text" id="am-session-name" placeholder="MySession">
+            <br><br>
+            <label>Host:</label>
+            <input type="text" id="am-host" placeholder="ftp.example.com">
+            <br><br>
+            <label>User:</label>
+            <input type="text" id="am-user" placeholder="user">
+            <br><br>
+            <label>Password:</label>
+            <input type="password" id="am-password" placeholder="•••••">
+            <br><br>
+            <button onclick="addSession()">Pridať/Uložiť</button>
+        </div>
+
+        <hr>
+        <h3>Existujúce Sessions</h3>
+        <ul id="am-session-list"></ul>
+
+        <button onclick="closeAccessManager()">Zavrieť</button>
+      </div>
+    </div>
+</body>
+</html>
