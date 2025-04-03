@@ -5,10 +5,10 @@
 let currentLocalPath = '.';
 let currentRemotePath = '.';
 
-// Nová premenná - root cesta (lokálna)
+// root cesta (lokálna)
 let localRootPath = '.';
 
-// Zoznam položiek
+// Zoznam položiek v paneloch
 let localList = [];
 let remoteList = [];
 
@@ -32,7 +32,7 @@ $(document).ready(() => {
     refreshLocalFiles(localRootPath);
     refreshRemoteFiles();
 
-    // Kliknutie na položku v lokálnom paneli
+    // Kliknutie v lokálnom paneli
     $('#local-files').on('click', 'li', function() {
         setActivePanel('local');
         const index = $(this).index();
@@ -40,7 +40,7 @@ $(document).ready(() => {
         clearRemoteSelection();
     });
 
-    // Kliknutie na položku vo vzdialenom paneli
+    // Kliknutie vo vzdialenom paneli
     $('#remote-files').on('click', 'li', function() {
         setActivePanel('remote');
         const index = $(this).index();
@@ -74,21 +74,22 @@ $(document).ready(() => {
             e.preventDefault();
             handleF7();
         }
-        // Shift + F4 = nový (prázdny) súbor
+        // Shift+F4 = nový súbor
         else if (e.key === 'F4' && e.shiftKey) {
             e.preventDefault();
             handleNewFile();
         }
-        // Pohyb ↑/↓
+        // Delete = mazanie
+        else if (e.key === 'Delete') {
+            e.preventDefault();
+            handleDelete();
+        }
+        // Pohyb
         else if (e.key === 'ArrowDown') {
             moveSelectionDown();
         } 
         else if (e.key === 'ArrowUp') {
             moveSelectionUp();
-        }
-        else if (e.key === 'Delete') {
-            e.preventDefault();
-            handleDelete();
         }
     });
 });
@@ -135,7 +136,7 @@ function refreshLocalFiles(path = '.') {
 
         localList = [];
 
-        // Pridáme ".." (UP) len ak nie sme v localRootPath
+        // ".." len ak nie sme v root
         if (path !== localRootPath) {
             localFiles.append(`<li data-up="true">🔼 ..</li>`);
             localList.push({ name: '..', is_dir: false, up: true });
@@ -176,7 +177,6 @@ function refreshRemoteFiles(path = currentRemotePath) {
 
         remoteList = [];
 
-        // ".."
         if (path !== '.') {
             remoteFiles.append(`<li data-up="true">🔼 ..</li>`);
             remoteList.push({ name: '..', is_dir: false, is_symlink: false, link_target: null, up: true });
@@ -319,7 +319,7 @@ function clearRemoteSelection() {
 
 
 ////////////////////////////////////////////////////////////////////
-// ZÁKLADNÉ AKCIE: Connect, Enter, F5
+// ZÁKLADNÉ AKCIE
 ////////////////////////////////////////////////////////////////////
 
 function connect() {
@@ -334,7 +334,7 @@ function connect() {
     });
 }
 
-// ENTER = navigácia do priečinka / symlink / open file editor
+// Enter = navigácia do priečinka / symlink / open file editor
 function handleEnter() {
     if (activePanel === 'local' && selectedLocalItem) {
         if (selectedLocalItem.up) {
@@ -350,11 +350,11 @@ function handleEnter() {
             }
             refreshLocalFiles(currentLocalPath);
         } else {
-            // Obyčajný súbor -> otvoríme editor
-            let filePath = (currentLocalPath === '.') 
+            // Obyčajný súbor -> otvor editor
+            let filePath = (currentLocalPath === '.')
                 ? selectedLocalItem.name
                 : unifyPath(currentLocalPath + '/' + selectedLocalItem.name);
-            openEditor(filePath, false); // lokálny súbor
+            openEditor(filePath, false);
         }
     }
     else if (activePanel === 'remote' && selectedRemoteItem) {
@@ -379,7 +379,7 @@ function handleEnter() {
             }
             refreshRemoteFiles(currentRemotePath);
         } else {
-            // Obyčajný vzdialený súbor -> editor
+            // Súbor -> editor
             let filePath = (currentRemotePath === '.')
                 ? selectedRemoteItem.name
                 : (currentRemotePath + '/' + selectedRemoteItem.name);
@@ -395,7 +395,7 @@ function handleF5() {
             alert('Nie je možné kopírovať ".."');
             return;
         }
-        let localFull = (currentLocalPath === '.') 
+        let localFull = (currentLocalPath === '.')
             ? selectedLocalItem.name
             : unifyPath(currentLocalPath + '/' + selectedLocalItem.name);
         if (selectedLocalItem.isDir) {
@@ -421,7 +421,7 @@ function handleF5() {
             alert('Nie je možné kopírovať ".."');
             return;
         }
-        let remoteFull = (currentRemotePath === '.') 
+        let remoteFull = (currentRemotePath === '.')
             ? selectedRemoteItem.name
             : (currentRemotePath + '/' + selectedRemoteItem.name);
 
@@ -445,6 +445,107 @@ function handleF5() {
     }
 }
 
+// F2 = rename
+function handleF2() {
+    if (activePanel === 'local' && selectedLocalItem) {
+        if (selectedLocalItem.up) {
+            alert('Nemožno premenovať ".."');
+            return;
+        }
+        let oldName = (currentLocalPath === '.')
+            ? selectedLocalItem.name
+            : unifyPath(currentLocalPath + '/' + selectedLocalItem.name);
+
+        let newName = prompt("Zadaj nový názov:", selectedLocalItem.name);
+        if (!newName) return;
+
+        let fullNew = (currentLocalPath === '.')
+            ? newName
+            : unifyPath(currentLocalPath + '/' + newName);
+
+        eel.rename_local_file(oldName, fullNew)((resp) => {
+            alert(resp);
+            refreshLocalFiles(currentLocalPath);
+        });
+    }
+    else if (activePanel === 'remote' && selectedRemoteItem) {
+        if (selectedRemoteItem.up) {
+            alert('Nemožno premenovať ".."');
+            return;
+        }
+        let oldName = (currentRemotePath === '.')
+            ? selectedRemoteItem.name
+            : (currentRemotePath + '/' + selectedRemoteItem.name);
+
+        let newName = prompt("Zadaj nový názov:", selectedRemoteItem.name);
+        if (!newName) return;
+
+        let fullNew = (currentRemotePath === '.')
+            ? newName
+            : (currentRemotePath + '/' + newName);
+
+        eel.rename_remote_file(oldName, fullNew)((resp) => {
+            alert(resp);
+            refreshRemoteFiles(currentRemotePath);
+        });
+    }
+}
+
+// Shift+F4 = nový súbor
+function handleNewFile() {
+    let name = prompt("Zadaj názov nového súboru:");
+    if (!name) return;
+
+    if (activePanel === 'local') {
+        let fullPath = (currentLocalPath === '.')
+            ? name
+            : unifyPath(currentLocalPath + '/' + name);
+
+        eel.create_local_file(fullPath)((resp) => {
+            alert(resp);
+            refreshLocalFiles(currentLocalPath);
+        });
+    }
+    else if (activePanel === 'remote') {
+        let fullPath = (currentRemotePath === '.')
+            ? name
+            : (currentRemotePath + '/' + name);
+
+        eel.create_remote_file(fullPath)((resp) => {
+            alert(resp);
+            refreshRemoteFiles(currentRemotePath);
+        });
+    }
+}
+
+// F7 = nový priečinok
+function handleF7() {
+    let name = prompt("Zadaj názov nového priečinka:");
+    if (!name) return;
+
+    if (activePanel === 'local') {
+        let fullPath = (currentLocalPath === '.')
+            ? name
+            : unifyPath(currentLocalPath + '/' + name);
+
+        eel.create_local_folder(fullPath)((resp) => {
+            alert(resp);
+            refreshLocalFiles(currentLocalPath);
+        });
+    }
+    else if (activePanel === 'remote') {
+        let fullPath = (currentRemotePath === '.')
+            ? name
+            : (currentRemotePath + '/' + name);
+
+        eel.create_remote_folder(fullPath)((resp) => {
+            alert(resp);
+            refreshRemoteFiles(currentRemotePath);
+        });
+    }
+}
+
+// Delete = mazanie
 function handleDelete() {
     let confirmDelete = confirm("Naozaj chceš vymazať označenú položku?");
     if (!confirmDelete) return;
@@ -482,122 +583,14 @@ function handleDelete() {
 }
 
 
-
-////////////////////////////////////////////////////////////////////
-// NOVÉ FUNKCIE: F2 = rename, Shift+F4 = nový súbor, F7 = nový priečinok
-////////////////////////////////////////////////////////////////////
-
-function handleF2() {
-    // Premenovanie vybraného súboru
-    if (activePanel === 'local' && selectedLocalItem) {
-        if (selectedLocalItem.up) {
-            alert('Nemožno premenovať ".."');
-            return;
-        }
-        let oldName = (currentLocalPath === '.') 
-            ? selectedLocalItem.name
-            : unifyPath(currentLocalPath + '/' + selectedLocalItem.name);
-
-        let newName = prompt("Zadaj nový názov:", selectedLocalItem.name);
-        if (!newName) return;
-
-        let fullNew = (currentLocalPath === '.') 
-            ? newName
-            : unifyPath(currentLocalPath + '/' + newName);
-
-        eel.rename_local_file(oldName, fullNew)((resp) => {
-            alert(resp);
-            refreshLocalFiles(currentLocalPath);
-        });
-    }
-    else if (activePanel === 'remote' && selectedRemoteItem) {
-        if (selectedRemoteItem.up) {
-            alert('Nemožno premenovať ".."');
-            return;
-        }
-        let oldName = (currentRemotePath === '.') 
-            ? selectedRemoteItem.name
-            : (currentRemotePath + '/' + selectedRemoteItem.name);
-
-        let newName = prompt("Zadaj nový názov:", selectedRemoteItem.name);
-        if (!newName) return;
-
-        let fullNew = (currentRemotePath === '.') 
-            ? newName
-            : (currentRemotePath + '/' + newName);
-
-        eel.rename_remote_file(oldName, fullNew)((resp) => {
-            alert(resp);
-            refreshRemoteFiles(currentRemotePath);
-        });
-    }
-}
-
-function handleNewFile() {
-    // Vytvorenie nového (prázdneho) súboru
-    let name = prompt("Zadaj názov nového súboru:");
-    if (!name) return;
-
-    if (activePanel === 'local') {
-        let fullPath = (currentLocalPath === '.') 
-            ? name
-            : unifyPath(currentLocalPath + '/' + name);
-
-        eel.create_local_file(fullPath)((resp) => {
-            alert(resp);
-            refreshLocalFiles(currentLocalPath);
-        });
-    }
-    else if (activePanel === 'remote') {
-        let fullPath = (currentRemotePath === '.') 
-            ? name
-            : (currentRemotePath + '/' + name);
-
-        eel.create_remote_file(fullPath)((resp) => {
-            alert(resp);
-            refreshRemoteFiles(currentRemotePath);
-        });
-    }
-}
-
-function handleF7() {
-    // Vytvorenie nového priečinka
-    let name = prompt("Zadaj názov nového priečinka:");
-    if (!name) return;
-
-    if (activePanel === 'local') {
-        let fullPath = (currentLocalPath === '.') 
-            ? name
-            : unifyPath(currentLocalPath + '/' + name);
-
-        eel.create_local_folder(fullPath)((resp) => {
-            alert(resp);
-            refreshLocalFiles(currentLocalPath);
-        });
-    }
-    else if (activePanel === 'remote') {
-        let fullPath = (currentRemotePath === '.') 
-            ? name
-            : (currentRemotePath + '/' + name);
-
-        eel.create_remote_folder(fullPath)((resp) => {
-            alert(resp);
-            refreshRemoteFiles(currentRemotePath);
-        });
-    }
-}
-
-
 ////////////////////////////////////////////////////////////////////
 // Editor: Otvorenie nového okna so sessionStorage parametrami
 ////////////////////////////////////////////////////////////////////
 
 function openEditor(filePath, isRemote) {
-    // Uložíme parametre do sessionStorage, aby ich editor vedel načítať
     sessionStorage.setItem('editor_filePath', filePath);
     sessionStorage.setItem('editor_isRemote', isRemote ? 'true' : 'false');
 
-    // Otvoríme nové okno s editor.html
     window.open('editor.html', '_blank', 'width=800,height=600');
 }
 
@@ -689,7 +682,6 @@ function useSession(sessionName) {
             alert("Session sa nenašla");
             return;
         }
-        // Nastavíme do inputov
         $('#host').val(s.host);
         $('#username').val(s.user);
         $('#password').val(s.password);

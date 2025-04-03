@@ -1,19 +1,19 @@
 import eel
-import ftplib
 import os
-import posixpath
+import ftplib
+import shutil
 import configparser
 import base64
 import io
-import shutil
+import posixpath
 
 eel.init('web')
 
 ftp = None
-INIFILE = 'winscp.ini'
+INIFILE = 'winscp.ini'  # kam ukladáme sessions
 
 ###############################################################################
-# Obfuskovanie / Deobfuskácia hesiel v štýle WinSCP
+# Obfuskovanie / Deobfuskácia hesiel (WinSCP style)
 ###############################################################################
 
 def obfuscate_winscp_password(password: str) -> str:
@@ -39,7 +39,7 @@ def deobfuscate_winscp_password(obf_string: str) -> str:
     return decoded.decode('utf-8', errors='replace')
 
 ###############################################################################
-# Správa WinSCP sessions v .ini
+# Správa WinSCP sessions v .ini (obfuskovaný formát)
 ###############################################################################
 
 @eel.expose
@@ -69,6 +69,7 @@ def add_winscp_session(host, user, password, session_name):
     section = f"Sessions\\{session_name}"
     if section not in config.sections():
         config.add_section(section)
+
     config[section]["HostName"] = host
     config[section]["UserName"] = user
     obf = obfuscate_winscp_password(password)
@@ -79,6 +80,7 @@ def add_winscp_session(host, user, password, session_name):
 
     with open(INIFILE, 'w', encoding='utf-8') as f:
         config.write(f)
+
     return "Session bola pridaná/aktualizovaná."
 
 @eel.expose
@@ -95,7 +97,7 @@ def delete_winscp_session(session_name):
         return f"Session '{session_name}' neexistuje."
 
 ###############################################################################
-# FTP funkcionalita
+# Pripojenie k FTP
 ###############################################################################
 
 @eel.expose
@@ -109,45 +111,53 @@ def connect_to_ftp(host, username, password):
         ftp = None
         return f"Chyba: {str(e)}"
 
+###############################################################################
+# Listing priečinkov (robustné parsovanie)
+###############################################################################
+
 @eel.expose
 def list_remote_dir(path="."):
+    """Použijeme robustné parsovanie s split(None, 8)."""
     global ftp
     if ftp is None:
         return "Nie si pripojený k FTP serveru."
+
     try:
-        ftp.cwd(path)
-        items = []
-        ftp.retrlines('LIST', lambda x: items.append(x))
-        files = []
-
-        for item in items:
-            perms = item[0] if item else '-'
-            splitted = item.split()
-            name = splitted[-1] if len(splitted) >= 1 else '??'
-            link_target = None
-            is_symlink = False
-            is_dir = False
-
-            if perms == 'd':
-                is_dir = True
-            elif perms == 'l':
-                is_symlink = True
-                arrow_pos = item.find("->")
-                if arrow_pos >= 0:
-                    left_side = item[:arrow_pos].strip()
-                    right_side = item[arrow_pos+2:].strip()
-                    name = left_side.split()[-1] if left_side.split() else name
-                    link_target = right_side
+        ftp.cwd('/' + path)
+        lines = []
+        ftp.retrlines('LIST', lines.append)
+        results = []
+        print(lines)
+        for line in lines:
+            parts = line.split(None, 8)
+            if len(parts) < 9:
+                # Môže sa stať, ak je server výstredný
+                # Skúsime fallback
+                name = parts[-1] if parts else '?'
+                perms = parts[0] if parts else ''
             else:
-                is_dir = False
+                perms = parts[0]
+                name = parts[8].strip()
 
-            files.append({
+            is_dir = perms.startswith('d')
+            is_symlink = perms.startswith('l')
+            link_target = None
+            if is_symlink:
+                arrow_pos = name.find("->")
+                if arrow_pos >= 0:
+                    # name = "linkname -> target"
+                    left_side = name[:arrow_pos].strip()
+                    right_side = name[arrow_pos+2:].strip()
+                    name = left_side
+                    link_target = right_side
+
+            results.append({
                 "name": name,
                 "is_dir": is_dir,
                 "is_symlink": is_symlink,
                 "link_target": link_target
             })
-        return files
+        return results
     except Exception as e:
         return f"Chyba: {str(e)}"
 
@@ -160,16 +170,22 @@ def list_local_dir(path="."):
         if not os.path.isdir(abs_path):
             return f"Chyba: cesta '{abs_path}' nie je priečinok"
 
-        file_items = []
-        for name in os.listdir(abs_path):
-            full_path = os.path.join(abs_path, name)
-            file_items.append({
+        entries = os.listdir(abs_path)
+        results = []
+        for name in entries:
+            fullpath = os.path.join(abs_path, name)
+            isdir = os.path.isdir(fullpath)
+            results.append({
                 "name": name,
-                "is_dir": os.path.isdir(full_path)
+                "is_dir": isdir
             })
-        return file_items
+        return results
     except Exception as e:
         return f"Chyba: {str(e)}"
+
+###############################################################################
+# Kopírovanie súborov (upload/download)
+###############################################################################
 
 @eel.expose
 def download_file(remote_file, local_file):
@@ -178,10 +194,10 @@ def download_file(remote_file, local_file):
         return "Nie si pripojený k FTP serveru."
     try:
         with open(local_file, 'wb') as f:
-            ftp.retrbinary('RETR ' + remote_file, f.write)
+            ftp.retrbinary(f'RETR {remote_file}', f.write)
         return "Súbor stiahnutý."
     except Exception as e:
-        return f"Chyba: {str(e)}"
+        return f"Chyba pri sťahovaní súboru: {str(e)}"
 
 @eel.expose
 def upload_file(local_file, remote_file):
@@ -193,7 +209,7 @@ def upload_file(local_file, remote_file):
             ftp.storbinary(f'STOR {remote_file}', f)
         return "Súbor nahraný."
     except Exception as e:
-        return f"Chyba: {str(e)}"
+        return f"Chyba pri nahrávaní súboru: {str(e)}"
 
 @eel.expose
 def upload_folder(local_folder, remote_folder):
@@ -212,17 +228,15 @@ def upload_folder(local_folder, remote_folder):
                 remote_subdir = remote_folder
             else:
                 remote_subdir = posixpath.join(remote_folder, rel_path)
-
             try:
                 ftp.mkd(remote_subdir)
             except ftplib.error_perm:
                 pass
-
-            for f in files:
-                local_file = os.path.join(root, f)
-                remote_file = posixpath.join(remote_subdir, f)
-                with open(local_file, 'rb') as file_obj:
-                    ftp.storbinary(f'STOR {remote_file}', file_obj)
+            for file in files:
+                lf = os.path.join(root, file)
+                rf = posixpath.join(remote_subdir, file)
+                with open(lf, 'rb') as f:
+                    ftp.storbinary(f'STOR {rf}', f)
 
         return "Priečinok nahraný."
     except Exception as e:
@@ -233,6 +247,7 @@ def download_folder(remote_folder, local_folder):
     global ftp
     if ftp is None:
         return "Nie si pripojený k FTP serveru."
+
     try:
         if not os.path.exists(local_folder):
             os.makedirs(local_folder)
@@ -240,71 +255,37 @@ def download_folder(remote_folder, local_folder):
         original_cwd = ftp.pwd()
         ftp.cwd(remote_folder)
 
-        items = []
-        ftp.retrlines('LIST', lambda x: items.append(x))
-
-        for item in items:
-            perms = item[0] if item else '-'
-            splitted = item.split()
-            name = splitted[-1] if len(splitted) >= 1 else '??'
-            if perms == 'd':
-                sub_remote = posixpath.join(remote_folder, name)
-                sub_local = os.path.join(local_folder, name)
-                download_folder(sub_remote, sub_local)
+        lines = []
+        ftp.retrlines('LIST', lines.append)
+        for line in lines:
+            parts = line.split(None, 8)
+            if len(parts) < 9:
+                name = parts[-1] if parts else '?'
+                perms = parts[0] if parts else ''
             else:
-                remote_file = posixpath.join(remote_folder, name)
-                local_file = os.path.join(local_folder, name)
-                with open(local_file, 'wb') as f:
-                    ftp.retrbinary('RETR ' + remote_file, f.write)
+                perms = parts[0]
+                name = parts[8]
+
+            if perms.startswith('d'):
+                # priečinok
+                new_remote = posixpath.join(remote_folder, name)
+                new_local = os.path.join(local_folder, name)
+                download_folder(new_remote, new_local)
+            else:
+                # súbor
+                new_remote = posixpath.join(remote_folder, name)
+                new_local = os.path.join(local_folder, name)
+                with open(new_local, 'wb') as f:
+                    ftp.retrbinary(f'RETR {new_remote}', f.write)
 
         ftp.cwd(original_cwd)
         return "Priečinok stiahnutý."
     except Exception as e:
         return f"Chyba pri sťahovaní priečinka: {str(e)}"
-    
 
-@eel.expose
-def delete_local(path):
-    try:
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
-        return "Lokálna položka bola vymazaná."
-    except Exception as e:
-        return f"Chyba pri mazaní lokálnej položky: {str(e)}"
-
-@eel.expose
-def delete_remote(path):
-    global ftp
-    if ftp is None:
-        return "Nie si pripojený k FTP serveru."
-    try:
-        # najprv skúsime zmazať ako súbor
-        ftp.delete(path)
-    except ftplib.error_perm:
-        try:
-            # ak nejde, pokúsime sa zmazať ako priečinok
-            def ftp_recursive_delete(dir_path):
-                try:
-                    files = ftp.nlst(dir_path)
-                except ftplib.error_perm:
-                    files = []
-                for f in files:
-                    if f in ('.', '..'):
-                        continue
-                    try:
-                        ftp.delete(f)
-                    except ftplib.error_perm:
-                        ftp_recursive_delete(f)
-                ftp.rmd(dir_path)
-            ftp_recursive_delete(path)
-        except Exception as e:
-            return f"Chyba pri mazaní priečinka na FTP: {str(e)}"
-    except Exception as e:
-        return f"Chyba pri mazaní súboru na FTP: {str(e)}"
-
-    return "Vzdialená položka bola vymazaná."
+###############################################################################
+# Premenovanie, mazanie, nové súbory / priečinky
+###############################################################################
 
 @eel.expose
 def rename_local_file(old_path, new_path):
@@ -316,7 +297,6 @@ def rename_local_file(old_path, new_path):
 
 @eel.expose
 def rename_remote_file(old_path, new_path):
-    # Potrebujeme byť pripojení k FTP:
     global ftp
     if ftp is None:
         return "Nie si pripojený k FTP serveru."
@@ -326,15 +306,12 @@ def rename_remote_file(old_path, new_path):
     except Exception as e:
         return f"Chyba pri premenovaní na FTP: {str(e)}"
 
-
 @eel.expose
 def create_local_file(path):
-    """Vytvorí prázdny súbor, ak neexistuje."""
     try:
         if os.path.exists(path):
             return "Súbor už existuje."
-        # Vytvor prázdny
-        with open(path, 'w', encoding='utf-8'):
+        with open(path, 'w', encoding='utf-8') as f:
             pass
         return "Nový lokálny súbor vytvorený."
     except Exception as e:
@@ -342,13 +319,11 @@ def create_local_file(path):
 
 @eel.expose
 def create_remote_file(path):
-    """Vytvorí prázdny súbor (STOR)."""
     global ftp
     if ftp is None:
         return "Nie si pripojený k FTP serveru."
     try:
-        # `storbinary` s prázdnymi dátami:
-        empty_data = io.BytesIO(b"")  
+        empty_data = io.BytesIO(b"")
         ftp.storbinary(f"STOR {path}", empty_data)
         return "Nový vzdialený súbor vytvorený."
     except Exception as e:
@@ -372,18 +347,67 @@ def create_remote_folder(path):
         return "Nový vzdialený priečinok vytvorený."
     except Exception as e:
         return f"Chyba pri vytváraní vzdialeného priečinka: {str(e)}"
+
+@eel.expose
+def delete_local(path):
+    try:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+        return "Lokálna položka bola vymazaná."
+    except Exception as e:
+        return f"Chyba pri mazaní lokálnej položky: {str(e)}"
+
+@eel.expose
+def delete_remote(path):
+    """Rekurzívne zmazanie súboru/priečinka."""
+    global ftp
+    if ftp is None:
+        return "Nie si pripojený k FTP serveru."
+
+    # Skúsime zmazať ako súbor
+    try:
+        ftp.delete(path)
+        return "Vzdialená položka bola vymazaná (súbor)."
+    except ftplib.error_perm:
+        # Ak to nie je súbor, skúsime priečinok rekurzívne
+        def ftp_recursive_delete(dir_path):
+            lines = []
+            ftp.retrlines(f'LIST {dir_path}', lines.append)
+            for line in lines:
+                p = line.split(None, 8)
+                if len(p) < 9:
+                    nm = p[-1] if p else '?'
+                    pm = p[0] if p else ''
+                else:
+                    pm = p[0]
+                    nm = p[8]
+                if nm in ('.', '..'):
+                    continue
+                full = posixpath.join(dir_path, nm)
+                if pm.startswith('d'):
+                    ftp_recursive_delete(full)
+                else:
+                    ftp.delete(full)
+            ftp.rmd(dir_path)
+
+        try:
+            ftp_recursive_delete(path)
+            return "Vzdialená položka bola vymazaná (priečinok)."
+        except Exception as e:
+            return f"Chyba pri mazaní priečinka na FTP: {str(e)}"
+
 ###############################################################################
-# NOVÉ: editor - načítanie/uloženie obsahu súboru
+# Editor: načítanie/uloženie obsahu
 ###############################################################################
 
 @eel.expose
 def read_file_content(path, is_remote):
-    """Načíta obsah súboru ako text. Ak is_remote=True, stiahne z FTP."""
     if is_remote:
         global ftp
         if ftp is None:
             return "Chyba: Nie si pripojený k FTP serveru."
-        # stiahnuť do pamäte
         mem = io.BytesIO()
         try:
             ftp.retrbinary('RETR ' + path, mem.write)
@@ -392,7 +416,6 @@ def read_file_content(path, is_remote):
         except Exception as e:
             return f"Chyba pri čítaní remote: {str(e)}"
     else:
-        # lokálne
         try:
             with open(path, 'r', encoding='utf-8', errors='replace') as f:
                 return f.read()
@@ -401,7 +424,6 @@ def read_file_content(path, is_remote):
 
 @eel.expose
 def save_file_content(path, is_remote, new_content):
-    """Uloží text do daného súboru."""
     if is_remote:
         global ftp
         if ftp is None:
@@ -422,5 +444,4 @@ def save_file_content(path, is_remote, new_content):
 
 
 if __name__ == '__main__':
-    # Dôležité: použijeme block=False, aby sme mohli neskôr otvárať ďalšie okná
-    eel.start('index.html', size=(1000, 600), block=True)
+    eel.start('index.html', size=(1000, 600))

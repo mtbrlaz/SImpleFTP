@@ -21,7 +21,7 @@
     </div>
 
     <p>Klávesy: Tab (prepína panel), Enter (otvoriť), F5 (kopírovať), F2 (premenovať), 
-       Shift+F4 (nový súbor), F7 (nový priečinok)</p>
+        Shift+F4 (nový súbor), F7 (nový priečinok), Delete (zmazať)</p>
 
     <div class="panes">
         <div class="pane">
@@ -34,12 +34,12 @@
         </div>
     </div>
 
-    <!-- MODÁLNE OKNO PRE NASTAVENIA -->
+    <!-- MODÁLNE OKNO PRE NASTAVENIA (root cesta) -->
     <div id="settings-modal" class="modal">
       <div class="modal-content">
         <h2>Nastavenia</h2>
         <label for="rootPathInput">Root cesta pre lokálne súbory:</label><br>
-        <input type="text" id="rootPathInput" style="width: 80%;" placeholder="napr. C:/Users alebo /home/uzivatel"><br><br>
+        <input type="text" id="rootPathInput" style="width: 80%;" placeholder="C:/Users alebo /home/uzivatel"><br><br>
         <button onclick="saveSettings()">Uložiť</button>
         <button onclick="closeSettingsModal()">Zrušiť</button>
       </div>
