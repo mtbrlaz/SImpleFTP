@@ -23,6 +23,112 @@ let activePanel = 'local';
 let selectedLocalItem = null;
 let selectedRemoteItem = null;
 
+//kontext menu
+let contextMenuTargetPanel = null;
+let contextMenuItem = null;
+
+
+////////////////////////////////////////////////////////////////////
+// Kontextové menu
+////////////////////////////////////////////////////////////////////
+
+function getItemDetails(panel, index) {
+    if (panel === 'local') {
+        return localList[index];
+    } else {
+        return remoteList[index];
+    }
+}
+
+$(document).ready(() => {
+    highlightActivePanel();
+    const contextMenu = $('#context-menu');
+    
+    // Pre oba panely
+    $('#local-files, #remote-files').on('contextmenu', 'li', function(e) {
+        e.preventDefault();
+        contextMenuTargetPanel = $(this).parent().attr('id') === 'local-files' ? 'local' : 'remote';
+        const index = $(this).index();
+        
+        // Aktualizujte vybranú položku
+        if (contextMenuTargetPanel === 'local') {
+            highlightLocalIndex(index);  // Táto funkcia nastaví selectedLocalItem
+        } else {
+            highlightRemoteIndex(index); // Táto funkcia nastaví selectedRemoteItem
+        }
+        
+        contextMenuItem = getItemDetails(contextMenuTargetPanel, index);
+        showContextMenu(e.pageX, e.pageY, true);
+    });
+
+    // Pravé kliknutie na prázdne miesto v paneli
+    $('#local-files, #remote-files').on('contextmenu', function(e) {
+        if ($(e.target).is('li')) return;
+        e.preventDefault();
+        contextMenuTargetPanel = $(this).attr('id') === 'local-files' ? 'local' : 'remote';
+        contextMenuItem = null;
+        showContextMenu(e.pageX, e.pageY, false);
+    });
+
+    // Skryť menu pri ľavom kliknutí
+    $(document).click(() => contextMenu.addClass('hidden'));
+});
+
+function getItemDetails(panel, index) {
+    return panel === 'local' ? 
+        localList[index] : 
+        remoteList[index];
+}
+
+function showContextMenu(x, y, isItem) {
+    const menu = $('#context-menu');
+    menu.removeClass('hidden')
+        .css({ left: x + 'px', top: y + 'px' });
+
+    // Skryť neplatné akcie
+    menu.find('div').show();
+    if (!isItem) {
+        menu.find('div:not([onclick*="new_"])').hide();
+    } else {
+        menu.find('[onclick*="new_"]').hide();
+        const item = contextMenuTargetPanel === 'local' ? selectedLocalItem : selectedRemoteItem;
+        
+        // Skryť "Zmazať" a "Premenovať" pre ".."
+        if (item?.up) {
+            menu.find('[onclick*="delete"], [onclick*="rename"]').hide();
+        }
+        
+        // Skryť "Otvoriť" pre súbory (ak je potrebné)
+        if (!item?.isDir) {
+            menu.find('[onclick*="open"]').hide();
+        }
+    }
+}
+
+function handleContextAction(action) {
+    if (!contextMenuTargetPanel) return;
+
+    switch(action) {
+        case 'open':
+            handleEnter();
+            break;
+        case 'copy':
+            handleF5();
+            break;
+        case 'rename':
+            handleF2();
+            break;
+        case 'delete':
+            handleDelete();
+            break;
+        case 'new_file':
+            handleNewFile();
+            break;
+        case 'new_folder':
+            handleF7();
+            break;
+    }
+}
 
 ////////////////////////////////////////////////////////////////////
 // Inicializácia
@@ -37,6 +143,7 @@ $(document).ready(() => {
         setActivePanel('local');
         const index = $(this).index();
         highlightLocalIndex(index);
+        highlightActivePanel();
         clearRemoteSelection();
     });
 
@@ -45,6 +152,7 @@ $(document).ready(() => {
         setActivePanel('remote');
         const index = $(this).index();
         highlightRemoteIndex(index);
+        highlightActivePanel();
         clearLocalSelection();
     });
 
@@ -54,6 +162,7 @@ $(document).ready(() => {
         if (e.key === 'Tab') {
             e.preventDefault();
             togglePanel();
+            highlightActivePanel();
         } 
         // ENTER
         else if (e.key === 'Enter') {
@@ -160,7 +269,7 @@ function refreshLocalFiles(path = '.') {
         if (activePanel === 'local' && localSelectedIndex >= 0) {
             highlightLocalIndex(localSelectedIndex);
         } else {
-            $('#local-files li').removeClass('selected');
+            $('#local-files li').removeClass('bg-blue-100 font-semibold');
         }
     });
 }
@@ -213,7 +322,7 @@ function refreshRemoteFiles(path = currentRemotePath) {
         if (activePanel === 'remote' && remoteSelectedIndex >= 0) {
             highlightRemoteIndex(remoteSelectedIndex);
         } else {
-            $('#remote-files li').removeClass('selected');
+            $('#remote-files li').removeClass('bg-blue-100 font-semibold');
         }
     });
 }
@@ -223,12 +332,25 @@ function refreshRemoteFiles(path = currentRemotePath) {
 // OVLÁDANIE VÝBERU - highlight, panel, pohyb...
 ////////////////////////////////////////////////////////////////////
 
+function highlightActivePanel() {
+    const localTitle = document.querySelector('#local-files').closest('div').querySelector('h2');
+    const remoteTitle = document.querySelector('#remote-files').closest('div').querySelector('h2');
+
+    [localTitle, remoteTitle].forEach(el => el.classList.remove('font-semibold', 'text-blue-600'));
+
+    if (activePanel === 'local') {
+        localTitle.classList.add('font-semibold', 'text-blue-600');
+    } else {
+        remoteTitle.classList.add('font-semibold', 'text-blue-600');
+    }
+}
+
 function highlightLocalIndex(index) {
     localSelectedIndex = index;
-    $('#local-files li').removeClass('selected');
+    $('#local-files li').removeClass('bg-blue-100 font-semibold');
     let lis = $('#local-files li');
     if (index >= 0 && index < lis.length) {
-        $(lis[index]).addClass('selected');
+        $(lis[index]).addClass('bg-blue-100 font-semibold');
         $(lis[index])[0].scrollIntoView({ block: 'nearest' });
 
         let liEl = $(lis[index]);
@@ -244,10 +366,10 @@ function highlightLocalIndex(index) {
 
 function highlightRemoteIndex(index) {
     remoteSelectedIndex = index;
-    $('#remote-files li').removeClass('selected');
+    $('#remote-files li').removeClass('bg-blue-100 font-semibold');
     let lis = $('#remote-files li');
     if (index >= 0 && index < lis.length) {
-        $(lis[index]).addClass('selected');
+        $(lis[index]).addClass('bg-blue-100 font-semibold');
         $(lis[index])[0].scrollIntoView({ block: 'nearest' });
 
         let liEl = $(lis[index]);
@@ -271,9 +393,11 @@ function togglePanel() {
     if (activePanel === 'local') {
         setActivePanel('remote');
         if (remoteSelectedIndex >= 0) highlightRemoteIndex(remoteSelectedIndex);
+        //highlightLocalIndex(-1);
     } else {
         setActivePanel('local');
         if (localSelectedIndex >= 0) highlightLocalIndex(localSelectedIndex);
+        //highlightRemoteIndex(-1);
     }
 }
 
@@ -308,13 +432,13 @@ function moveSelectionUp() {
 function clearLocalSelection() {
     selectedLocalItem = null;
     localSelectedIndex = -1;
-    $('#local-files li').removeClass('selected');
+    $('#local-files li').removeClass('bg-blue-100 font-semibold');
 }
 
 function clearRemoteSelection() {
     selectedRemoteItem = null;
     remoteSelectedIndex = -1;
-    $('#remote-files li').removeClass('selected');
+    $('#remote-files li').removeClass('bg-blue-100 font-semibold');
 }
 
 
@@ -323,11 +447,13 @@ function clearRemoteSelection() {
 ////////////////////////////////////////////////////////////////////
 
 function connect() {
-    let host = $('#host').val();
-    let username = $('#username').val();
-    let password = $('#password').val();
+    const protocol = $('#protocol').val();
+    const host = $('#host').val();
+    const port = $('#port').val();
+    const username = $('#username').val();
+    const password = $('#password').val();
 
-    eel.connect_to_ftp(host, username, password)((response) => {
+    eel.connect_to_server(host, username, password, protocol, port)((response) => {
         alert(response);
         currentRemotePath = '.';
         refreshRemoteFiles();
@@ -373,7 +499,7 @@ function handleEnter() {
             }
         } else if (selectedRemoteItem.isDir) {
             if (currentRemotePath === '.') {
-                currentRemotePath = selectedRemoteItem.name;
+                currentRemotePath = '/' + selectedRemoteItem.name;
             } else {
                 currentRemotePath += '/' + selectedRemoteItem.name;
             }
@@ -643,8 +769,8 @@ function loadSessions() {
                 <li>
                   <b>${sess.session_name}</b>
                   (host=${sess.host}, user=${sess.user})
-                  <button onclick="useSession('${sess.session_name}')">Použiť</button>
-                  <button onclick="removeSession('${sess.session_name}')">X</button>
+                  <button class="bg-green-500 text-white px-4 py-2 rounded hover:bg-red-600 mt-4" onclick="useSession('${sess.session_name}')">Použiť</button>
+                  <button class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mt-4" onclick="removeSession('${sess.session_name}')">X</button>
                 </li>
             `);
             list.append(li);
@@ -652,24 +778,20 @@ function loadSessions() {
     });
 }
 
+
 function addSession() {
     let sessionName = $('#am-session-name').val().trim();
     let host = $('#am-host').val().trim();
     let user = $('#am-user').val().trim();
     let password = $('#am-password').val().trim();
+    let protocol = $('#am-protocol').val();
+    let port = $('#am-port').val();
 
     if (!sessionName || !host || !user) {
         alert("Vyplň aspoň Session Name, Host a User");
         return;
     }
-    eel.add_winscp_session(host, user, password, sessionName)((resp) => {
-        alert(resp);
-        loadSessions();
-    });
-}
-
-function removeSession(sessionName) {
-    eel.delete_winscp_session(sessionName)((resp) => {
+    eel.add_winscp_session(host, user, password, sessionName, protocol, port)((resp) => {
         alert(resp);
         loadSessions();
     });
@@ -682,10 +804,11 @@ function useSession(sessionName) {
             alert("Session sa nenašla");
             return;
         }
+        $('#protocol').val(s.protocol);
         $('#host').val(s.host);
+        $('#port').val(s.port);
         $('#username').val(s.user);
         $('#password').val(s.password);
-
         closeAccessManager();
     });
 }

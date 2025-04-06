@@ -1,76 +1,135 @@
 <!DOCTYPE html>
-<html>
+<html lang="sk">
 <head>
     <meta charset="UTF-8">
     <title>FTP Klient</title>
-    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
     <script type="text/javascript" src="/eel.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="/browser@4.js"></script>
     <script src="script.js"></script>
+
+    <link href="/style.css" rel="stylesheet">        
+
+    <style>
+        li.selected {
+            @apply bg-blue-100 font-semibold;
+        }
+        li:hover {
+            @apply bg-gray-200;
+        }
+    </style>
+
 </head>
-<body>
-    <h1>FTP Klient</h1>
+<body class="bg-gray-100 p-6 font-sans">
 
-    <div id="ftp-connection">
-        <input type="text" id="host" placeholder="FTP Host">
-        <input type="text" id="username" placeholder="Používateľské meno">
-        <input type="password" id="password" placeholder="Heslo">
-        <button onclick="connect()">Pripojiť</button>
-        <button onclick="openSettingsModal()">Nastavenia</button>
-        <button onclick="openAccessManager()">Správca prístupov</button>
+    <h1 class="text-3xl font-bold mb-6 text-center text-blue-700">FTP Klient</h1>
+
+    <div id="ftp-connection" class="flex flex-wrap gap-2 items-center mb-4">
+        <select id="protocol" onchange="updatePort()" class="border border-gray-300 rounded p-2">
+            <option value="ftp">FTP</option>
+            <option value="ftps">FTPS</option>
+            <option value="sftp">SFTP</option>
+            <option value="scp">SCP</option>
+        </select>
+        <input type="text" id="host" placeholder="Host" class="border border-gray-300 rounded p-2">
+        <input type="number" id="port" placeholder="Port" value="21" class="border border-gray-300 rounded p-2 w-20">
+        <input type="text" id="username" placeholder="Používateľ" class="border border-gray-300 rounded p-2">
+        <input type="password" id="password" placeholder="Heslo" class="border border-gray-300 rounded p-2">
+        <button onclick="connect()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Pripojiť</button>
+        <button onclick="openSettingsModal()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Nastavenia</button>
+        <button onclick="openAccessManager()" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">Správca prístupov</button>
     </div>
 
-    <p>Klávesy: Tab (prepína panel), Enter (otvoriť), F5 (kopírovať), F2 (premenovať), 
-        Shift+F4 (nový súbor), F7 (nový priečinok), Delete (zmazať)</p>
+    <p class="mb-4 text-sm text-gray-600">
+        Klávesy: Tab (prepína panel), Enter (otvoriť), F5 (kopírovať), F2 (premenovať), 
+        Shift+F4 (nový súbor), F7 (nový priečinok), Delete (zmazať)
+    </p>
 
-    <div class="panes">
-        <div class="pane">
-            <h2>Lokálne súbory</h2>
-            <ul id="local-files"></ul>
+    <div class="flex gap-4 h-[500px]">
+        <div class="flex-1 border border-gray-300 bg-white rounded p-4 overflow-y-auto">
+            <h2 class="font-semibold text-lg mb-2">Lokálne súbory</h2>
+            <ul id="local-files" class="list-none p-0 m-0 space-y-1"></ul>
         </div>
-        <div class="pane">
-            <h2>Vzdialené súbory</h2>
-            <ul id="remote-files"></ul>
+        <div class="flex-1 border border-gray-300 bg-white rounded p-4 overflow-y-auto">
+            <h2 class="font-semibold text-lg mb-2">Vzdialené súbory</h2>
+            <ul id="remote-files" class="list-none p-0 m-0 space-y-1"></ul>
         </div>
     </div>
 
-    <!-- MODÁLNE OKNO PRE NASTAVENIA (root cesta) -->
-    <div id="settings-modal" class="modal">
-      <div class="modal-content">
-        <h2>Nastavenia</h2>
-        <label for="rootPathInput">Root cesta pre lokálne súbory:</label><br>
-        <input type="text" id="rootPathInput" style="width: 80%;" placeholder="C:/Users alebo /home/uzivatel"><br><br>
-        <button onclick="saveSettings()">Uložiť</button>
-        <button onclick="closeSettingsModal()">Zrušiť</button>
-      </div>
+    <!-- MODÁLNE OKNO PRE NASTAVENIA -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-md w-96">
+            <h2 class="text-xl font-bold mb-4">Nastavenia</h2>
+            <label for="rootPathInput" class="block mb-1">Root cesta pre lokálne súbory:</label>
+            <input type="text" id="rootPathInput" class="w-full border border-gray-300 rounded p-2 mb-4" placeholder="C:/Users alebo /home/uzivatel">
+            <div class="flex justify-end gap-2">
+                <button onclick="saveSettings()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Uložiť</button>
+                <button onclick="closeSettingsModal()" class="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500">Zrušiť</button>
+            </div>
+        </div>
     </div>
 
     <!-- MODÁLNE OKNO PRE ACCESS MANAGER -->
-    <div id="access-manager-modal" class="modal">
-      <div class="modal-content">
-        <h2>Správca prístupov (WinSCP Sessions)</h2>
-        <div>
-            <label>Session Name:</label>
-            <input type="text" id="am-session-name" placeholder="MySession">
-            <br><br>
-            <label>Host:</label>
-            <input type="text" id="am-host" placeholder="ftp.example.com">
-            <br><br>
-            <label>User:</label>
-            <input type="text" id="am-user" placeholder="user">
-            <br><br>
-            <label>Password:</label>
-            <input type="password" id="am-password" placeholder="•••••">
-            <br><br>
-            <button onclick="addSession()">Pridať/Uložiť</button>
+    <div id="access-manager-modal" class="hidden fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-md w-[500px] max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold mb-4">Správca prístupov (WinSCP Sessions)</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block mb-1">Session Name:</label>
+                    <input type="text" id="am-session-name" class="w-full border border-gray-300 rounded p-2" placeholder="MySession">
+                </div>
+                <div>
+                    <label class="block mb-1">Host:</label>
+                    <input type="text" id="am-host" class="w-full border border-gray-300 rounded p-2" placeholder="ftp.example.com">
+                </div>
+                <div>
+                    <label class="block mb-1">User:</label>
+                    <input type="text" id="am-user" class="w-full border border-gray-300 rounded p-2" placeholder="user">
+                </div>
+                <div>
+                    <label class="block mb-1">Password:</label>
+                    <input type="password" id="am-password" class="w-full border border-gray-300 rounded p-2" placeholder="•••••">
+                </div>
+                <div>
+                    <label class="block mb-1">Protocol:</label>
+                    <select id="am-protocol" class="w-full border border-gray-300 rounded p-2">
+                        <option value="ftp">FTP</option>
+                        <option value="ftps">FTPS</option>
+                        <option value="sftp">SFTP</option>
+                        <option value="scp">SCP</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block mb-1">Port:</label>
+                    <input type="number" id="am-port" value="21" class="w-full border border-gray-300 rounded p-2">
+                </div>
+                <button onclick="addSession()" class="bg-blue-600 text-white w-full py-2 rounded hover:bg-blue-700">Pridať/Uložiť</button>
+            </div>
+
+            <hr class="my-4">
+            <h3 class="font-semibold text-lg mb-2">Existujúce Sessions</h3>
+            <ul id="am-session-list" class="space-y-1"></ul>
+            <button onclick="closeAccessManager()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mt-4">Zavrieť</button>
         </div>
-
-        <hr>
-        <h3>Existujúce Sessions</h3>
-        <ul id="am-session-list"></ul>
-
-        <button onclick="closeAccessManager()">Zavrieť</button>
-      </div>
     </div>
+
+    <script>
+        function updatePort() {
+            const protocol = document.getElementById('protocol').value;
+            document.getElementById('port').value = (protocol === 'sftp' || protocol === 'scp') ? 22 : 21;
+        }
+    </script>
+
+    <div id="context-menu" class="hidden absolute bg-white border border-gray-300 shadow-lg rounded py-1 z-50">
+        <div class="px-4 py-2 hover:bg-blue-50 cursor-pointer" onclick="handleContextAction('open')">Otvoriť (Enter)</div>
+        <div class="px-4 py-2 hover:bg-blue-50 cursor-pointer" onclick="handleContextAction('copy')">Kopírovať (F5)</div>
+        <div class="px-4 py-2 hover:bg-blue-50 cursor-pointer" onclick="handleContextAction('rename')">Premenovať (F2)</div>
+        <div class="px-4 py-2 hover:bg-blue-50 cursor-pointer" onclick="handleContextAction('delete')">Zmazať (Delete)</div>
+        <hr class="my-1">
+        <div class="px-4 py-2 hover:bg-blue-50 cursor-pointer" onclick="handleContextAction('new_file')">Nový súbor (Shift+F4)</div>
+        <div class="px-4 py-2 hover:bg-blue-50 cursor-pointer" onclick="handleContextAction('new_folder')">Nový priečinok (F7)</div>
+    </div>
+
 </body>
 </html>

@@ -6,11 +6,21 @@ import configparser
 import base64
 import io
 import posixpath
+from ftplib import FTP_TLS  # FTPS
+import paramiko  # SFTP/SCP
+from scp import SCPClient  # SCP
+import stat  # SFTP atribúty
 
 eel.init('web')
 
-ftp = None
-INIFILE = 'winscp.ini'  # kam ukladáme sessions
+# Global connection object
+connection = {
+    'type': None,  # 'ftp', 'ftps', 'sftp', 'scp'
+    'conn': None,   # FTP/FTPS/SFTP/SCP objekt
+    'transport': None  # Paramiko transport (pre SFTP/SCP)
+}
+
+INIFILE = 'winscp.ini'
 
 ###############################################################################
 # Obfuskovanie / Deobfuskácia hesiel (WinSCP style)
@@ -53,17 +63,21 @@ def load_winscp_sessions():
             host = config[section].get("HostName", "")
             user = config[section].get("UserName", "")
             password_str = config[section].get("Password", "")
+            protocol = config[section].get("Protocol", "ftp")
+            port = config[section].get("PortNumber", "21")
             real_pass = deobfuscate_winscp_password(password_str)
             sessions.append({
                 "session_name": sess_name,
                 "host": host,
                 "user": user,
-                "password": real_pass
+                "password": real_pass,
+                "protocol": protocol,
+                "port": port
             })
     return sessions
 
 @eel.expose
-def add_winscp_session(host, user, password, session_name):
+def add_winscp_session(host, user, password, session_name, protocol='ftp', port=21):
     config = configparser.ConfigParser()
     config.read(INIFILE, encoding='utf-8')
     section = f"Sessions\\{session_name}"
@@ -72,16 +86,14 @@ def add_winscp_session(host, user, password, session_name):
 
     config[section]["HostName"] = host
     config[section]["UserName"] = user
+    config[section]["Protocol"] = protocol
+    config[section]["PortNumber"] = str(port)
     obf = obfuscate_winscp_password(password)
     config[section]["Password"] = f"obfuscated:{obf}"
-    config[section]["PortNumber"] = "21"
-    config[section]["FSProtocol"] = "5"
-    config[section]["Protocol"] = "2"
-
+    
     with open(INIFILE, 'w', encoding='utf-8') as f:
         config.write(f)
-
-    return "Session bola pridaná/aktualizovaná."
+    return "Session pridaná."
 
 @eel.expose
 def delete_winscp_session(session_name):
@@ -97,70 +109,119 @@ def delete_winscp_session(session_name):
         return f"Session '{session_name}' neexistuje."
 
 ###############################################################################
-# Pripojenie k FTP
+# Pripojenie k serveru (FTP/FTPS/SFTP/SCP)
 ###############################################################################
 
 @eel.expose
-def connect_to_ftp(host, username, password):
-    global ftp
+def connect_to_server(host, username, password, protocol='ftp', port=21):
+    global connection
     try:
-        ftp = ftplib.FTP(host)
-        ftp.login(username, password)
-        return "Pripojenie úspešné."
+        if connection['conn']:  # Zatvor predchádzajúce pripojenie
+            disconnect_server()
+
+        if protocol in ('ftp', 'ftps'):
+            # FTP/FTPS
+            if protocol == 'ftps':
+                ftp = FTP_TLS()
+                ftp.connect(host, int(port))
+                ftp.login(username, password)
+                ftp.prot_p()  # Explicit FTPS
+            else:
+                ftp = ftplib.FTP()
+                ftp.connect(host, int(port))
+                ftp.login(username, password)
+            connection = {'type': protocol, 'conn': ftp}
+
+        elif protocol in ('sftp', 'scp'):
+            # SFTP/SCP
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(host, port=int(port), username=username, password=password)
+            
+            if protocol == 'sftp':
+                sftp = ssh.open_sftp()
+                connection = {'type': 'sftp', 'conn': sftp, 'ssh': ssh}
+            else:
+                scp = SCPClient(ssh.get_transport())
+                connection = {'type': 'scp', 'conn': scp, 'ssh': ssh}
+
+        return "Pripojené cez " + protocol.upper()
     except Exception as e:
-        ftp = None
         return f"Chyba: {str(e)}"
 
+@eel.expose
+def disconnect_server():
+    global connection
+    if connection['type'] in ('sftp', 'scp') and connection.get('ssh'):
+        connection['ssh'].close()
+    elif connection['type'] in ('ftp', 'ftps') and connection.get('conn'):
+        connection['conn'].quit()
+    connection = {'type': None, 'conn': None}
+    return "Odpojené."
+
 ###############################################################################
-# Listing priečinkov (robustné parsovanie)
+# Listing priečinkov (FTP/FTPS/SFTP/SCP)
 ###############################################################################
 
 @eel.expose
 def list_remote_dir(path="."):
-    """Použijeme robustné parsovanie s split(None, 8)."""
-    global ftp
-    if ftp is None:
-        return "Nie si pripojený k FTP serveru."
-
+    global connection
+    if not connection['conn']:
+        return "Nie ste pripojení."
+    
     try:
-        ftp.cwd('/' + path)
-        lines = []
-        ftp.retrlines('LIST', lines.append)
         results = []
-        print(lines)
-        for line in lines:
-            parts = line.split(None, 8)
-            if len(parts) < 9:
-                # Môže sa stať, ak je server výstredný
-                # Skúsime fallback
-                name = parts[-1] if parts else '?'
-                perms = parts[0] if parts else ''
-            else:
-                perms = parts[0]
-                name = parts[8].strip()
+        if connection['type'] in ('ftp', 'ftps'):
+            connection['conn'].cwd(path)
+            lines = []
+            connection['conn'].retrlines('LIST', lines.append)
+            for line in lines:
+                parts = line.split(None, 8)
+                if len(parts) < 9:
+                    name = parts[-1] if parts else '?'
+                    perms = parts[0] if parts else ''
+                else:
+                    perms = parts[0]
+                    name = parts[8].strip()
+                is_dir = perms.startswith('d')
+                is_symlink = perms.startswith('l')
+                # ... [Spracovanie symlinkov] ...
+                results.append({
+                    "name": name,
+                    "is_dir": is_dir,
+                    "is_symlink": is_symlink
+                })
 
-            is_dir = perms.startswith('d')
-            is_symlink = perms.startswith('l')
-            link_target = None
-            if is_symlink:
-                arrow_pos = name.find("->")
-                if arrow_pos >= 0:
-                    # name = "linkname -> target"
-                    left_side = name[:arrow_pos].strip()
-                    right_side = name[arrow_pos+2:].strip()
-                    name = left_side
-                    link_target = right_side
+        elif connection['type'] == 'sftp':
+            items = connection['conn'].listdir_attr(path)
+            for item in items:
+                name = item.filename
+                is_dir = stat.S_ISDIR(item.st_mode)
+                is_symlink = stat.S_ISLNK(item.st_mode)
+                results.append({
+                    "name": name,
+                    "is_dir": is_dir,
+                    "is_symlink": is_symlink
+                })
 
-            results.append({
-                "name": name,
-                "is_dir": is_dir,
-                "is_symlink": is_symlink,
-                "link_target": link_target
-            })
+        elif connection['type'] == 'scp':
+            # SCP nepodporuje listing, použijeme SFTP
+            sftp = connection['ssh'].open_sftp()
+            items = sftp.listdir_attr(path)
+            for item in items:
+                name = item.filename
+                is_dir = stat.S_ISDIR(item.st_mode)
+                is_symlink = stat.S_ISLNK(item.st_mode)
+                results.append({
+                    "name": name,
+                    "is_dir": is_dir,
+                    "is_symlink": is_symlink
+                })
+            sftp.close()
+
         return results
     except Exception as e:
         return f"Chyba: {str(e)}"
-
 @eel.expose
 def list_local_dir(path="."):
     try:
@@ -184,33 +245,39 @@ def list_local_dir(path="."):
         return f"Chyba: {str(e)}"
 
 ###############################################################################
-# Kopírovanie súborov (upload/download)
+# Upload/Download súborov
 ###############################################################################
 
 @eel.expose
-def download_file(remote_file, local_file):
-    global ftp
-    if ftp is None:
-        return "Nie si pripojený k FTP serveru."
-    try:
-        with open(local_file, 'wb') as f:
-            ftp.retrbinary(f'RETR {remote_file}', f.write)
-        return "Súbor stiahnutý."
-    except Exception as e:
-        return f"Chyba pri sťahovaní súboru: {str(e)}"
-
-@eel.expose
 def upload_file(local_file, remote_file):
-    global ftp
-    if ftp is None:
-        return "Nie si pripojený k FTP serveru."
+    global connection
     try:
-        with open(local_file, 'rb') as f:
-            ftp.storbinary(f'STOR {remote_file}', f)
+        if connection['type'] in ('ftp', 'ftps'):
+            with open(local_file, 'rb') as f:
+                connection['conn'].storbinary(f'STOR {remote_file}', f)
+        elif connection['type'] == 'sftp':
+            connection['conn'].put(local_file, remote_file)
+        elif connection['type'] == 'scp':
+            connection['conn'].put(local_file, remote_file)
         return "Súbor nahraný."
     except Exception as e:
-        return f"Chyba pri nahrávaní súboru: {str(e)}"
+        return f"Chyba: {str(e)}"
 
+@eel.expose
+def download_file(remote_file, local_file):
+    global connection
+    try:
+        if connection['type'] in ('ftp', 'ftps'):
+            with open(local_file, 'wb') as f:
+                connection['conn'].retrbinary(f'RETR {remote_file}', f.write)
+        elif connection['type'] == 'sftp':
+            connection['conn'].get(remote_file, local_file)
+        elif connection['type'] == 'scp':
+            connection['conn'].get(remote_file, local_file)
+        return "Súbor stiahnutý."
+    except Exception as e:
+        return f"Chyba: {str(e)}"
+    
 @eel.expose
 def upload_folder(local_folder, remote_folder):
     global ftp
@@ -444,4 +511,4 @@ def save_file_content(path, is_remote, new_content):
 
 
 if __name__ == '__main__':
-    eel.start('index.html', size=(1000, 600))
+    eel.start('index.html', size=(1200, 1000))
